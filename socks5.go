@@ -6,11 +6,12 @@ package main
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"strconv"
 	"strings"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // Convert a IP:Port string to a byte array in network order.
@@ -44,14 +45,18 @@ func iobridge(src io.Reader, dst io.Writer, shutdown chan bool) {
 		n, err := src.Read(buf)
 		if err != nil {
 			if !(err == io.EOF || isUseOfClosedConn(err)) {
-				log.Printf("error reading %s: %s\n", src, err)
+				log.WithError(err).WithFields(log.Fields{
+					"src": src,
+				}).Error("error reading")
 			}
 			break
 		}
 
 		_, err = dst.Write(buf[:n])
 		if err != nil {
-			log.Printf("error writing %s: %s\n", src, err)
+			log.WithError(err).WithFields(log.Fields{
+				"src": src,
+			}).Error("error writing")
 			break
 		}
 	}
@@ -78,19 +83,29 @@ func errorReplyConnect(reason byte) []byte {
 }
 
 func performConnect(backend string, frontconn net.Conn) {
-	log.Printf("trying to connect to %s...\n", backend)
+	log.WithFields(log.Fields{
+		"backend": backend,
+	}).Info("connecting to")
 	backconn, err := net.Dial("tcp", backend)
 	if err != nil {
-		log.Printf("failed to connect to %s: %s\n", backend, err)
+		log.WithError(err).WithFields(log.Fields{
+			"backend": backend,
+		}).Error("failed to connect")
 		frontconn.Write(errorReplyConnect(0x05))
 		return
 	}
 
 	backaddr := backconn.RemoteAddr().String()
-	log.Println("CONNECTED backend", backconn, backaddr)
+	log.WithFields(log.Fields{
+		"backconn": backconn,
+		"backaddr": backaddr,
+	}).Debug("CONNECTED backend")
 	defer func() {
 		backconn.Close()
-		log.Println("DISCONNECTED backend", backconn, backaddr)
+		log.WithFields(log.Fields{
+			"backconn": backconn,
+			"backaddr": backaddr,
+		}).Debug("DISCONNECTED backend")
 	}()
 
 	// reply to the CONNECT command
@@ -110,13 +125,24 @@ func performConnect(backend string, frontconn net.Conn) {
 
 func handleConnection(frontconn net.Conn) {
 	frontaddr := frontconn.RemoteAddr().String()
-	log.Println("ACCEPTED frontend", frontconn, frontaddr)
+	log.WithFields(log.Fields{
+		"frontconn": frontconn,
+		"frontaddr": frontaddr,
+	}).Debug("ACCEPTED frontend")
 	defer func() {
 		if err := recover(); err != nil {
-			log.Println("ERROR frontend", frontconn, frontaddr, err)
+			log.WithFields(log.Fields{
+				"err":       err,
+				"frontconn": frontconn,
+				"frontaddr": frontaddr,
+			}).Error("ERROR frontend")
 		}
 		frontconn.Close()
-		log.Println("DISCONNECTED frontend", frontconn, frontaddr)
+		frontaddr := frontconn.RemoteAddr().String()
+		log.WithFields(log.Fields{
+			"frontconn": frontconn,
+			"frontaddr": frontaddr,
+		}).Debug("DISCONNECTED frontend")
 	}()
 
 	// receive auth packet
@@ -186,12 +212,14 @@ func listenAndServe(listenAddress string) {
 	if err != nil {
 		log.Fatal("Listen error: ", err)
 	}
-	log.Printf("Listening on %s...\n", listenAddress)
+	log.WithFields(log.Fields{
+		"listenAddress": listenAddress,
+	}).Info("Listening on")
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Println("Accept error:", err)
+			log.WithError(err).Error("Accept error")
 			continue
 		}
 		go handleConnection(conn)
