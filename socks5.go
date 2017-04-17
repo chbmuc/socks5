@@ -84,8 +84,9 @@ func errorReplyConnect(reason byte) []byte {
 
 func performConnect(backend string, frontconn net.Conn) {
 	log.WithFields(log.Fields{
-		"backend": backend,
-	}).Info("connecting to")
+		"src":  frontconn.RemoteAddr().String(),
+		"dest": backend,
+	}).Info("new connection")
 	backconn, err := net.Dial("tcp", backend)
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{
